@@ -26,9 +26,12 @@ export class AuthenticationService {
   login(username: string, password: string) {
     return this.http.post<any>(`${environment.apiUrl}/users/authenticate`, {username, password})
       .pipe(map(user => {
-        // Guardamos los detalles del usuario en localstorage junto con su jwt, para mantenerlo presente en las diferentes páginas
-        localStorage.setItem('currentUser', JSON.stringify(user));
-        this.currentUserSubject.next(user);
+        // Login exitoso si esta presente el jwt token en la respuesta
+        if (user && user.token) {
+          // Guardamos los detalles del usuario en localstorage junto con su jwt, para mantenerlo presente en las diferentes páginas
+          localStorage.setItem('currentUser', JSON.stringify(user));
+          this.currentUserSubject.next(user);
+        }
         return user;
       }));
   }

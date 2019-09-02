@@ -3,8 +3,12 @@ import {HTTP_INTERCEPTORS, HttpEvent, HttpHandler, HttpInterceptor, HttpRequest,
 import {Observable, of, throwError} from 'rxjs';
 import {delay, dematerialize, materialize, mergeMap} from 'rxjs/operators';
 import {User} from '../models/user';
+import {Role} from '../models/role';
 
-const users: User[] = [{ id: 1, username: 'test', password: 'test', firstName: 'Test', lastName: 'User'}];
+const users: User[] = [
+  { id: 1, username: 'admin', password: 'admin', firstName: 'Admin', lastName: 'User', role: Role.Admin },
+  {id: 2, username: 'user', password: 'user', firstName: 'Normal', lastName: 'User', role: Role.User}
+  ];
 
 @Injectable()
 export class FakeBackendInterceptor implements HttpInterceptor {
@@ -24,6 +28,8 @@ export class FakeBackendInterceptor implements HttpInterceptor {
           return authenticate();
         case url.endsWith('/users') && method === 'GET':
           return getUsers();
+        case url.match(/\/users\/\d+$/) && method === 'GET':
+          return getUserById();
         default:
           //
           return next.handle(req);
@@ -41,18 +47,30 @@ export class FakeBackendInterceptor implements HttpInterceptor {
         username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
-        token: 'fake-jwt-token'
+        role: user.role,
+        token: `fake-jwt-token.${user.id}`
       });
     }
 
     function getUsers() {
-      if (!isLoggedIn()) { return unauthorized(); }
+      // if (!isLoggedIn()) { return unauthorized(); }
+      if (!isAdmin()) { return unauthorized(); }
       return ok(users);
+    }
+
+    function getUserById() {
+      if (!isLoggedIn()) { return unauthorized(); }
+
+      // solo admin puede acceder a otros registros de usuario
+      if (!isAdmin() && currentUser().id !== idFromUrl()) { return unauthorized(); }
+
+      const user = users.find(x => x.id === idFromUrl());
+      return ok(user);
     }
 
     // helper functions
     // tslint:disable-next-line:no-shadowed-variable
-    function ok(body?) {
+    function ok(body) {
       return of(new HttpResponse({status: 200, body}));
     }
 
@@ -65,7 +83,22 @@ export class FakeBackendInterceptor implements HttpInterceptor {
     }
 
     function isLoggedIn() {
-      return headers.get('Authorization') === 'Bearer fake-jwt-token';
+      const authHeader = headers.get('Authorization') || '';
+      return authHeader.startsWith('Bearer fake-jwt-token');
+    }
+    function isAdmin() {
+      return isLoggedIn() && currentUser().role === Role.Admin;
+    }
+    function currentUser() {
+      if (!isLoggedIn()) return;
+      // tslint:disable-next-line:radix
+      const id = parseInt(headers.get('Authorization').split('.')[1]);
+      return users.find(x => x.id === id);
+    }
+    function idFromUrl() {
+      const urlParts = url.split('/');
+      // tslint:disable-next-line:radix
+      return parseInt(urlParts[urlParts.length - 1]);
     }
   }
 }
